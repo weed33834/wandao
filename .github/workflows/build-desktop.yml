@@ -185,3 +185,4 @@ jobs:
           files: |
             release-artifacts/*.exe
             release-artifacts/*.zip
+# workflow-registration-trigger: 2026-07-23
