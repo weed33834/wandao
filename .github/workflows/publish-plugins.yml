@@ -144,3 +144,4 @@ jobs:
             gh release create plugins-experimental --title "Wandao Experimental Plugin Registry" --notes "实验性插件：仅供主动测试，不代表官方稳定支持。" --prerelease
           fi
           gh release upload plugins-experimental dist-plugins/experimental/* --clobber
+# workflow-registration-trigger: 2026-07-23
