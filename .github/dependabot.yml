@@ -4,14 +4,20 @@ updates:
     directory: /wandao_electron
     schedule:
       interval: weekly
+    auto-merge:
+      enabled: true
     open-pull-requests-limit: 5
   - package-ecosystem: pip
     directory: /
     schedule:
       interval: weekly
+    auto-merge:
+      enabled: true
     open-pull-requests-limit: 5
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    auto-merge:
+      enabled: true
     open-pull-requests-limit: 5
