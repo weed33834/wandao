@@ -4,27 +4,21 @@
 
 普通用户优先下载 Releases 页面里的发行版：
 
-- Windows：下载 `.exe` 安装包。
-- macOS：下载 `.zip` 压缩包，解压后运行应用。
+- Windows x64：下载 `.exe` 安装包。
+- macOS Apple Silicon（arm64，macOS 11+）：下载 `.zip` 压缩包，解压后运行应用。
 
-当前 macOS `.zip` 包未进行 Apple 公证。请只从本项目 GitHub Release 下载；若解压并移动到“应用程序”后提示“已损坏，无法打开”，在终端执行：
-
-```bash
-xattr -cr /Applications/Wandao.app
-```
-
-再重新打开应用。
+当前正式 Release 中的 macOS `.zip` 未做 Developer ID 签名、Apple 公证或 stapling。请只从本项目 GitHub Releases 下载并移入“应用程序”；Gatekeeper 阻止时，可在“系统设置 → 隐私与安全性”确认来源后选择仍要打开，不要通过清除隔离属性绕过系统校验。
 
 发行版已内置 Python 运行时和导入导出依赖，普通用户不需要额外安装 Python。
 
 ## 源码运行
 
-源码运行和参与开发仍然需要本机 Python 3.10+ 与 Node.js：
+源码运行和参与开发需要 Python 3.10+、Node.js 22.12+、Rust 1.88.0 和对应系统的 [Tauri 2 前置依赖](https://v2.tauri.app/start/prerequisites/)：
 
 ```bash
 python -m pip install -r requirements.txt
 cd wandao_electron
-npm install
+npm ci
 npm start
 ```
 
@@ -109,12 +103,12 @@ ima 知识库导出不需要浏览器登录。填写 ima Client ID 和 API Key �
 
 需要中断时点击“停止”，工具会在安全点结束并保留已完成文件。
 
-## 打包
+## 本地未签名 smoke 打包
 
 ```bash
-npm run build:win
-npm run build:mac:x64
-npm run build:mac:arm64
+npm run build:win:unsigned
+npm run build:mac:x64:unsigned
+npm run build:mac:arm64:unsigned
 ```
 
-打包命令会先下载对应平台的 Python standalone 运行时，并安装 `requirements.txt` 里的依赖。Windows 包可在 Windows 本机生成；macOS 包建议在 macOS 或 GitHub Actions 的 macOS runner 生成。
+这些命令会先下载对应平台的 Python standalone 运行时，并使用 `requirements.lock` 中固定的版本和 SHA-256 安装依赖；`requirements.txt` 保留直接依赖声明，两者必须同步。本地 `UNSIGNED-SMOKE` 产物只能用于 smoke，不得直接发布；正式 `v*` tag 当前也生成未签名包，但会额外通过完整质量、安装和供应链元数据门禁。仅需清除 Tauri 打包源码里的 Python 字节码缓存时，可运行 `python scripts/prepare_python_runtime.py --clean-source-caches-only`，该模式不会下载或修改 runtime。

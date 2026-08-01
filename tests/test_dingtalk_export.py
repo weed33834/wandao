@@ -5,6 +5,7 @@ import importlib.util
 import io
 import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -173,7 +174,7 @@ class DingTalkExportTests(unittest.TestCase):
 
         self.assertEqual([(entry.uuid, entry.parent_uuid) for entry in entries], [("library", ""), ("section", "library"), ("selected", "section")])
 
-    def test_children_stop_when_the_server_repeats_a_pagination_cursor(self) -> None:
+    def test_children_stop_when_has_more_is_false_even_if_cursor_is_present(self) -> None:
         calls = 0
         original = dingtalk.call_helper
 
@@ -181,17 +182,304 @@ class DingTalkExportTests(unittest.TestCase):
             nonlocal calls
             self.assertEqual(method, "children")
             calls += 1
-            return {"children": [], "loadMoreId": "same-page"}
+            return {"children": [], "hasMore": False, "loadMoreId": "terminal-cursor"}
 
         dingtalk.call_helper = fake_call_helper
         try:
-            args = dingtalk.parse_args([])
+            args = dingtalk.parse_args(["--request-delay", "0"])
+            entry = dingtalk.DingEntry("folder", "", "", "目录", "folder", "", True, True)
+            self.assertEqual(dingtalk.children_of(None, entry, args), [])
+        finally:
+            dingtalk.call_helper = original
+
+        self.assertEqual(calls, 1)
+
+    def test_children_follow_a_new_cursor_until_the_terminal_page(self) -> None:
+        calls: list[tuple[str, str]] = []
+        responses = [
+            {
+                "children": [
+                    {
+                        "dentryUuid": "first-document",
+                        "name": "第一页文档",
+                        "contentType": "alidoc",
+                        "dentryType": "file",
+                    }
+                ],
+                "hasMore": True,
+                "loadMoreId": "next-page",
+            },
+            {
+                "children": [
+                    {
+                        "dentryUuid": "second-document",
+                        "name": "第二页文档",
+                        "contentType": "alidoc",
+                        "dentryType": "file",
+                    }
+                ],
+                "hasMore": False,
+                "loadMoreId": "terminal-cursor",
+            },
+        ]
+        original = dingtalk.call_helper
+
+        def fake_call_helper(_cdp, method, *args, **_kwargs):
+            self.assertEqual(method, "children")
+            calls.append((str(args[0]), str(args[1])))
+            return responses[len(calls) - 1]
+
+        dingtalk.call_helper = fake_call_helper
+        try:
+            args = dingtalk.parse_args(["--request-delay", "0"])
+            entry = dingtalk.DingEntry("folder", "", "", "目录", "folder", "", True, True)
+            children = dingtalk.children_of(None, entry, args)
+        finally:
+            dingtalk.call_helper = original
+
+        self.assertEqual(calls, [("folder", ""), ("folder", "next-page")])
+        self.assertEqual([entry.uuid for entry in children], ["first-document", "second-document"])
+
+    def test_children_reject_repeated_cursor_when_server_still_has_more(self) -> None:
+        calls = 0
+        original = dingtalk.call_helper
+
+        def fake_call_helper(_cdp, method, *_args, **_kwargs):
+            nonlocal calls
+            self.assertEqual(method, "children")
+            calls += 1
+            return {"children": [], "hasMore": True, "loadMoreId": "same-page"}
+
+        dingtalk.call_helper = fake_call_helper
+        try:
+            args = dingtalk.parse_args(["--request-delay", "0"])
+            entry = dingtalk.DingEntry("folder", "", "", "目录", "folder", "", True, True)
+            with self.assertRaisesRegex(dingtalk.ExportError, "下一页游标重复"):
+                dingtalk.children_of(None, entry, args)
+        finally:
+            dingtalk.call_helper = original
+
+        self.assertEqual(calls, 2)
+
+    def test_children_reject_missing_cursor_when_server_still_has_more(self) -> None:
+        original = dingtalk.call_helper
+
+        def fake_call_helper(_cdp, method, *_args, **_kwargs):
+            self.assertEqual(method, "children")
+            return {"children": [], "hasMore": True}
+
+        dingtalk.call_helper = fake_call_helper
+        try:
+            args = dingtalk.parse_args(["--request-delay", "0"])
+            entry = dingtalk.DingEntry("folder", "", "", "目录", "folder", "", True, True)
+            with self.assertRaisesRegex(dingtalk.ExportError, "没有下一页游标"):
+                dingtalk.children_of(None, entry, args)
+        finally:
+            dingtalk.call_helper = original
+
+    def test_children_keeps_legacy_safe_stop_when_has_more_is_omitted(self) -> None:
+        calls = 0
+        original = dingtalk.call_helper
+
+        def fake_call_helper(_cdp, method, *_args, **_kwargs):
+            nonlocal calls
+            self.assertEqual(method, "children")
+            calls += 1
+            return {"children": [], "loadMoreId": "legacy-cursor"}
+
+        dingtalk.call_helper = fake_call_helper
+        try:
+            args = dingtalk.parse_args(["--request-delay", "0"])
             entry = dingtalk.DingEntry("folder", "", "", "目录", "folder", "", True, True)
             self.assertEqual(dingtalk.children_of(None, entry, args), [])
         finally:
             dingtalk.call_helper = original
 
         self.assertEqual(calls, 2)
+
+    def test_entry_treats_string_false_as_not_having_children(self) -> None:
+        entry = dingtalk.entry_from_raw({
+            "dentryUuid": "document",
+            "name": "普通文档",
+            "contentType": "alidoc",
+            "dentryType": "file",
+            "hasChildren": "false",
+        })
+        self.assertFalse(entry.is_folder)
+        self.assertFalse(entry.has_children)
+
+    def test_collect_tree_does_not_recurse_into_file_nodes(self) -> None:
+        calls: list[str] = []
+        responses = {
+            "root": {
+                "dentryUuid": "root",
+                "name": "知识库",
+                "contentType": "folder",
+                "dentryType": "folder",
+                "hasChildren": True,
+            },
+            "children:root": {
+                "children": [
+                    {
+                        "dentryUuid": "document",
+                        "name": "普通文档",
+                        "contentType": "alidoc",
+                        "dentryType": "file",
+                        "hasChildren": True,
+                        "parentDentryUuid": "root",
+                    },
+                    {
+                        "dentryUuid": "folder",
+                        "name": "子目录",
+                        "contentType": "folder",
+                        "dentryType": "folder",
+                        "hasChildren": True,
+                        "parentDentryUuid": "root",
+                    },
+                ],
+                "hasMore": False,
+                "loadMoreId": "terminal-cursor",
+            },
+            "children:folder": {
+                "children": [
+                    {
+                        "dentryUuid": "nested-document",
+                        "name": "子文档",
+                        "contentType": "alidoc",
+                        "dentryType": "file",
+                        "hasChildren": False,
+                        "parentDentryUuid": "folder",
+                    }
+                ],
+                "hasMore": False,
+                "loadMoreId": "terminal-cursor",
+            },
+        }
+        original = dingtalk.call_helper
+
+        def fake_call_helper(_cdp, method, *args, **_kwargs):
+            if method == "info":
+                return responses[str(args[0])]
+            if method == "children":
+                calls.append(str(args[0]))
+                return responses[f"children:{args[0]}"]
+            raise AssertionError(method)
+
+        dingtalk.call_helper = fake_call_helper
+        try:
+            args = dingtalk.parse_args([
+                "--source-url", "https://alidocs.dingtalk.com/i/nodes/root",
+                "--request-delay", "0",
+            ])
+            entries = dingtalk.collect_tree(None, args.source_url, args)
+        finally:
+            dingtalk.call_helper = original
+
+        self.assertEqual(calls, ["root", "folder"])
+        self.assertEqual([entry.uuid for entry in entries], ["root", "document", "folder", "nested-document"])
+
+    def test_toc_cache_is_scoped_to_source_and_is_not_reported(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            args = dingtalk.parse_args([
+                "--source-url", "https://alidocs.dingtalk.com/i/nodes/root?from=copy",
+                "--document-scope", "library-root",
+            ])
+            entries = [
+                dingtalk.DingEntry("root", "private-key", "private-doc-key", "知识库", "folder", "", True, True),
+                dingtalk.DingEntry("document", "private-key", "private-doc-key", "普通文档", "alidoc", "root", False, True),
+            ]
+            with patch.object(dingtalk, "default_data_dir", return_value=Path(temp_dir)):
+                dingtalk.save_toc_cache(args, entries)
+                raw = json.loads((Path(temp_dir) / dingtalk.TOC_CACHE_FILENAME).read_text(encoding="utf-8"))
+                restored = dingtalk.load_recent_toc_cache(args, {"document"})
+
+            self.assertNotIn("source_url", raw)
+            self.assertIn("dentryKey", raw["entries"][0])
+            self.assertIn("docKey", raw["entries"][0])
+            self.assertIsNotNone(restored)
+            assert restored is not None
+            self.assertEqual(
+                [(entry.uuid, entry.key, entry.doc_key) for entry in restored],
+                [("root", "private-key", "private-doc-key"), ("document", "private-key", "private-doc-key")],
+            )
+
+    def test_toc_json_never_exposes_cached_document_keys(self) -> None:
+        payload = dingtalk.toc_json([
+            dingtalk.DingEntry(
+                "document",
+                "private-dentry-key",
+                "private-doc-key",
+                "普通文档",
+                "alidoc",
+                "",
+                False,
+                False,
+            )
+        ])
+
+        serialized = json.dumps(payload, ensure_ascii=False)
+        self.assertNotIn("private-dentry-key", serialized)
+        self.assertNotIn("private-doc-key", serialized)
+        self.assertNotIn("dentryKey", serialized)
+        self.assertNotIn("docKey", serialized)
+        self.assertEqual(payload["nodes"][0]["exportId"], "document")
+
+    def test_export_reuses_toc_cache_without_rescanning_or_info_fallback(self) -> None:
+        class FakeCdp:
+            @staticmethod
+            def close() -> None:
+                return None
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            args = dingtalk.parse_args([
+                "--source-url",
+                "https://alidocs.dingtalk.com/i/nodes/root?from=copy",
+                "--output",
+                str(temp_path / "output"),
+                "--request-delay",
+                "0",
+            ])
+            entries = [
+                dingtalk.DingEntry("root", "root-dentry-key", "root-doc-key", "知识库", "folder", "", True, False),
+                dingtalk.DingEntry("document", "document-dentry-key", "document-doc-key", "普通文档", "alidoc", "root", False, False),
+            ]
+            calls: list[tuple[str, tuple[object, ...]]] = []
+
+            def fake_call_helper(_cdp, method, *call_args, **_kwargs):
+                calls.append((method, call_args))
+                if method == "info":
+                    self.fail("valid cached dentryKey/docKey must avoid the per-document info fallback")
+                self.assertEqual(method, "content")
+                self.assertEqual(call_args, ("document-dentry-key", "document-doc-key"))
+                return {
+                    "documentContent": {
+                        "checkpoint": {
+                            "content": json.dumps({
+                                "parts": {
+                                    "main": {
+                                        "type": "application/x-alidocs-word",
+                                        "data": {"body": ["root", {}, ["p", {}, "正文"]]},
+                                    }
+                                }
+                            })
+                        }
+                    }
+                }
+
+            with (
+                patch.object(dingtalk, "default_data_dir", return_value=temp_path),
+                patch.object(dingtalk, "connect_dingtalk_browser", return_value=(FakeCdp(), None)),
+                patch.object(dingtalk, "collect_tree", side_effect=AssertionError("cache hit must not rescan the directory")),
+                patch.object(dingtalk, "call_helper", side_effect=fake_call_helper),
+                patch.object(dingtalk, "emit"),
+            ):
+                dingtalk.save_toc_cache(args, entries)
+                report = dingtalk.export_dingtalk(args)
+                self.assertTrue((temp_path / "output" / "知识库" / "普通文档.md").is_file())
+
+        self.assertEqual(report["exported"], 1)
+        self.assertEqual([method for method, _ in calls], ["content"])
 
     def test_safe_path_segment_never_uses_path_traversal(self) -> None:
         self.assertEqual(dingtalk.safe_path_segment("../../报告?.md"), "--报告-.md")
@@ -205,6 +493,62 @@ class DingTalkExportTests(unittest.TestCase):
             "https://img.alicdn.com/example.png",
         )
 
+    def test_root_relative_asset_url_is_resolved_against_the_trusted_page_origin(self) -> None:
+        self.assertEqual(
+            dingtalk.resolve_asset_url(
+                "/core/api/resources/img/redacted-resource-id?token=secret",
+                "https://alidocs.dingtalk.com/i/nodes/document-id",
+            ),
+            "https://alidocs.dingtalk.com/core/api/resources/img/redacted-resource-id?token=secret",
+        )
+        self.assertTrue(
+            dingtalk.is_trusted_asset_url(
+                dingtalk.resolve_asset_url(
+                    "/core/api/resources/img/redacted-resource-id",
+                    "https://docs.dingtalk.com/i/nodes/document-id",
+                )
+            )
+        )
+
+    def test_asset_url_resolution_does_not_accept_protocol_relative_or_external_urls(self) -> None:
+        protocol_relative = dingtalk.resolve_asset_url(
+            "//example.com/core/api/resources/img/id",
+            "https://alidocs.dingtalk.com/i/nodes/document-id",
+        )
+        external = dingtalk.resolve_asset_url(
+            "https://example.com/image.png",
+            "https://alidocs.dingtalk.com/i/nodes/document-id",
+        )
+        self.assertEqual(protocol_relative, "//example.com/core/api/resources/img/id")
+        self.assertEqual(external, "https://example.com/image.png")
+        self.assertFalse(dingtalk.is_trusted_asset_url(protocol_relative))
+        self.assertFalse(dingtalk.is_trusted_asset_url(external))
+
+    def test_rewrite_images_resolves_root_relative_url_before_validation_and_download(self) -> None:
+        rendered = dingtalk.RenderResult(
+            markdown="![图片](/core/api/resources/img/resource-id)",
+            images=[dingtalk.ImageRef("/core/api/resources/img/resource-id", "图片")],
+        )
+        args = dingtalk.parse_args([])
+        with tempfile.TemporaryDirectory() as temp_dir, \
+                patch.object(dingtalk, "download_direct_asset_with_retry", return_value=(b"image", "image/png")) as download, \
+                patch.object(dingtalk, "check_stopped"), \
+                patch.object(dingtalk, "throttle_request"), \
+                patch.object(dingtalk, "emit"):
+            markdown, failures, saved = dingtalk.rewrite_images(
+                None,
+                rendered,
+                rendered.markdown,
+                Path(temp_dir) / "document.md",
+                args,
+                page_url="https://alidocs.dingtalk.com/i/nodes/document-id",
+            )
+
+        download.assert_called_once_with("https://alidocs.dingtalk.com/core/api/resources/img/resource-id")
+        self.assertEqual(markdown, "![图片](assets/image-001.png)")
+        self.assertEqual(failures, [])
+        self.assertEqual(saved, 1)
+
     def test_read_limited_response_rejects_oversized_content(self) -> None:
         class FakeResponse:
             headers = {"Content-Length": "6"}
@@ -217,11 +561,14 @@ class DingTalkExportTests(unittest.TestCase):
             dingtalk.read_limited_response(FakeResponse(), max_bytes=5)
 
     def test_document_requests_have_a_bounded_browser_timeout(self) -> None:
-        self.assertIn("version === 4", dingtalk.DINGTALK_HELPER_JS)
-        self.assertIn("version: 4", dingtalk.DINGTALK_HELPER_JS)
+        self.assertIn("version === 5", dingtalk.DINGTALK_HELPER_JS)
+        self.assertIn("version: 5", dingtalk.DINGTALK_HELPER_JS)
         self.assertIn("fetchWithTimeout", dingtalk.DINGTALK_HELPER_JS)
+        self.assertIn("fetchJsonWithTimeout", dingtalk.DINGTALK_HELPER_JS)
         self.assertIn("readArrayBufferWithTimeout", dingtalk.DINGTALK_HELPER_JS)
         self.assertIn("AbortController", dingtalk.DINGTALK_HELPER_JS)
+        self.assertIn("payload = await response.json()", dingtalk.DINGTALK_HELPER_JS)
+        self.assertIn("clearTimeout(timer)", dingtalk.DINGTALK_HELPER_JS)
         self.assertIn("}, 45000)", dingtalk.DINGTALK_HELPER_JS)
         self.assertIn("}, 15000)", dingtalk.DINGTALK_HELPER_JS)
         self.assertEqual(dingtalk.ASSET_DOWNLOAD_WORKERS, 6)

@@ -1,0 +1,443 @@
+name: Build Desktop
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  quality:
+    name: Quality Gate (${{ matrix.os }}, Python ${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+        python: ["3.10", "3.11"]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: wandao_electron/package-lock.json
+
+      - name: Install locked Node test dependencies
+        working-directory: wandao_electron
+        run: npm ci --ignore-scripts
+
+      - name: Run Python and frontend quality checks
+        env:
+          WANDAO_SKIP_RUST_CHECKS: "1"
+        run: python scripts/quality_check.py
+
+  rust-quality:
+    name: Rust Quality Gate (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-15]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@1.88.0
+        with:
+          components: clippy,rustfmt
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: wandao_electron/src-tauri
+
+      - name: Check formatting
+        working-directory: wandao_electron/src-tauri
+        run: cargo fmt --all -- --check
+
+      - name: Check all Rust targets
+        working-directory: wandao_electron/src-tauri
+        run: cargo check --all-targets --locked
+
+      - name: Run Rust tests
+        working-directory: wandao_electron/src-tauri
+        run: cargo test --all-targets --locked
+
+      - name: Run Clippy
+        working-directory: wandao_electron/src-tauri
+        run: cargo clippy --all-targets --locked -- -D warnings
+
+  quality-gate:
+    name: Quality Gate
+    needs: [quality, rust-quality]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every quality job to pass
+        shell: bash
+        run: |
+          if [ "${{ needs.quality.result }}" != "success" ] || [ "${{ needs.rust-quality.result }}" != "success" ]; then
+            echo "Python/Node matrix: ${{ needs.quality.result }}" >&2
+            echo "Rust gate: ${{ needs.rust-quality.result }}" >&2
+            exit 1
+          fi
+          echo "All quality jobs passed."
+
+  package-smoke:
+    name: PR Windows Tauri Package Smoke
+    needs: quality-gate
+    if: github.event_name == 'pull_request'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: wandao_electron/package-lock.json
+      - uses: dtolnay/rust-toolchain@1.88.0
+        with:
+          targets: x86_64-pc-windows-msvc
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: wandao_electron/src-tauri
+
+      - name: Install Tauri CLI
+        working-directory: wandao_electron
+        run: npm ci
+
+      - name: Prepare Python and build NSIS installer
+        working-directory: wandao_electron
+        run: npm run build:win:unsigned
+
+      - name: Verify legacy Electron migration and install candidate
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_ACTIONS -ne "true" -or $env:RUNNER_ENVIRONMENT -ne "github-hosted") {
+            throw "The legacy upgrade fixture is restricted to an ephemeral GitHub-hosted runner"
+          }
+          $installer = Get-ChildItem wandao_electron/src-tauri/target/release/bundle/nsis/*.exe | Select-Object -First 1
+          if (-not $installer) { throw "Tauri NSIS installer was not generated" }
+
+          $legacyKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\1b0cbfbe-638f-5e34-9149-e794da0edaeb"
+          $legacyInstallKey = "HKCU:\Software\1b0cbfbe-638f-5e34-9149-e794da0edaeb"
+          $legacyRoot = Join-Path $env:RUNNER_TEMP "wandao-custom-legacy\Wandao"
+          $legacyMain = Join-Path $legacyRoot "Wandao.exe"
+          $legacyUninstaller = Join-Path $legacyRoot "Uninstall Wandao.exe"
+          $legacyUserData = Join-Path $env:APPDATA "wandao"
+          $blockedRoot = Join-Path $env:RUNNER_TEMP "wandao-tauri-untrusted-upgrade"
+          $runningBlockedRoot = Join-Path $env:RUNNER_TEMP "wandao-tauri-running-upgrade"
+          $installRoot = Join-Path $env:RUNNER_TEMP "wandao-tauri-legacy-upgrade"
+          $fixtureMarker = Join-Path $env:RUNNER_TEMP "wandao-legacy-fixture-invoked.txt"
+          $maliciousMarker = Join-Path $env:RUNNER_TEMP "wandao-malicious-command-executed"
+          foreach ($unusedPath in @($legacyRoot, $legacyUserData, $blockedRoot, $runningBlockedRoot, $installRoot, $fixtureMarker, $maliciousMarker)) {
+            if (Test-Path -LiteralPath $unusedPath) { throw "Fixture path is not clean: $unusedPath" }
+          }
+          if (Test-Path -LiteralPath $legacyKey) { throw "Legacy uninstall key already exists" }
+          if (Test-Path -LiteralPath $legacyInstallKey) { throw "Legacy product key already exists" }
+          if (Test-Path -LiteralPath "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Wandao") {
+            throw "Tauri uninstall key already exists"
+          }
+
+          New-Item -ItemType Directory -Path $legacyRoot | Out-Null
+          New-Item -ItemType Directory -Path $legacyUserData | Out-Null
+          Set-Content -LiteralPath (Join-Path $legacyUserData "migration-sentinel.txt") -Value "preserve-me" -NoNewline
+          rustc tests/fixtures/windows_legacy_uninstaller.rs -o $legacyUninstaller
+          if ($LASTEXITCODE -ne 0) { throw "Could not compile the controlled legacy uninstaller fixture" }
+          Copy-Item -LiteralPath $legacyUninstaller -Destination $legacyMain
+          $env:WANDAO_LEGACY_FIXTURE_MARKER = $fixtureMarker
+
+          New-Item -Path $legacyKey -Force | Out-Null
+          New-Item -Path $legacyInstallKey -Force | Out-Null
+          New-ItemProperty -LiteralPath $legacyInstallKey -Name InstallLocation -Value $legacyRoot -PropertyType String -Force | Out-Null
+          $displayVersion = "1.3.10"
+          $uninstallString = "`"$legacyUninstaller`" /currentuser"
+          $quietUninstallString = "$uninstallString /S"
+          New-ItemProperty -LiteralPath $legacyKey -Name DisplayName -Value "万能导 Wandao $displayVersion" -PropertyType String -Force | Out-Null
+          New-ItemProperty -LiteralPath $legacyKey -Name DisplayVersion -Value $displayVersion -PropertyType String -Force | Out-Null
+          New-ItemProperty -LiteralPath $legacyKey -Name Publisher -Value "tllovesxs" -PropertyType String -Force | Out-Null
+
+          New-ItemProperty -LiteralPath $legacyKey -Name DisplayIcon -Value "$legacyMain,0" -PropertyType String -Force | Out-Null
+          New-ItemProperty -LiteralPath $legacyKey -Name UninstallString -Value $uninstallString -PropertyType String -Force | Out-Null
+
+          # Untrusted registry command text must abort before writing the new application.
+          $maliciousQuietUninstall = "`"$env:ComSpec`" /d /c mkdir `"$maliciousMarker`""
+          New-ItemProperty -LiteralPath $legacyKey -Name QuietUninstallString -Value $maliciousQuietUninstall -PropertyType String -Force | Out-Null
+          $blocked = Start-Process -FilePath $installer.FullName -ArgumentList @("/S", "/D=$blockedRoot") -PassThru -Wait
+          if ($blocked.ExitCode -eq 0) { throw "Installer accepted an untrusted legacy uninstall command" }
+          if (-not (Test-Path -LiteralPath $legacyKey) -or -not (Test-Path -LiteralPath $legacyInstallKey) -or -not (Test-Path -LiteralPath $legacyMain)) {
+            throw "Rejected migration modified the legacy installation"
+          }
+          if (Test-Path -LiteralPath (Join-Path $blockedRoot "Wandao.exe")) {
+            throw "Rejected migration wrote the candidate application"
+          }
+          if (Test-Path -LiteralPath $maliciousMarker) {
+            throw "Rejected migration executed untrusted registry command text"
+          }
+          if (Test-Path -LiteralPath $fixtureMarker) {
+            throw "Rejected untrusted-command migration executed the legacy fixture"
+          }
+
+          New-ItemProperty -LiteralPath $legacyKey -Name QuietUninstallString -Value $quietUninstallString -PropertyType String -Force | Out-Null
+
+          # A silent upgrade must fail without terminating the running legacy
+          # application or invoking its uninstaller.
+          $legacyProcess = Start-Process -FilePath $legacyMain -ArgumentList @("--stay-running") -PassThru
+          try {
+            Start-Sleep -Milliseconds 500
+            $legacyProcess.Refresh()
+            if ($legacyProcess.HasExited) { throw "Controlled legacy process did not remain running" }
+            $runningBlocked = Start-Process -FilePath $installer.FullName -ArgumentList @("/S", "/D=$runningBlockedRoot") -PassThru -Wait
+            if ($runningBlocked.ExitCode -eq 0) { throw "Installer accepted a running legacy application" }
+            $legacyProcess.Refresh()
+            if ($legacyProcess.HasExited) { throw "Installer terminated the running legacy application" }
+            if (-not (Test-Path -LiteralPath $legacyKey) -or -not (Test-Path -LiteralPath $legacyInstallKey) -or -not (Test-Path -LiteralPath $legacyMain) -or -not (Test-Path -LiteralPath $legacyUninstaller)) {
+              throw "Rejected running-process migration modified the legacy fixture"
+            }
+            if (Test-Path -LiteralPath (Join-Path $runningBlockedRoot "Wandao.exe")) {
+              throw "Rejected running-process migration wrote the candidate application"
+            }
+            if (Test-Path -LiteralPath $fixtureMarker) {
+              throw "Rejected running-process migration invoked the legacy uninstaller"
+            }
+          } finally {
+            $legacyProcess.Refresh()
+            if (-not $legacyProcess.HasExited) {
+              Stop-Process -Id $legacyProcess.Id -Force
+              Wait-Process -Id $legacyProcess.Id -Timeout 10 -ErrorAction SilentlyContinue
+            }
+          }
+
+          $process = Start-Process -FilePath $installer.FullName -ArgumentList @("/S", "/D=$installRoot") -PassThru -Wait
+          if ($process.ExitCode -ne 0) { throw "Installer failed with exit code $($process.ExitCode)" }
+          if (Test-Path -LiteralPath $legacyKey) { throw "Legacy uninstall key survived the migration" }
+          if (Test-Path -LiteralPath $legacyInstallKey) { throw "Legacy product key survived the migration" }
+          if (Test-Path -LiteralPath $legacyMain) { throw "Legacy main executable survived the migration" }
+          $sentinel = Join-Path $legacyUserData "migration-sentinel.txt"
+          if ((Get-Content -Raw -LiteralPath $sentinel) -ne "preserve-me") {
+            throw "Legacy user data was not preserved"
+          }
+          if (-not (Test-Path -LiteralPath $fixtureMarker)) {
+            throw "Trusted migration did not invoke the controlled legacy uninstaller"
+          }
+          $fixtureInvocation = Get-Content -Raw -LiteralPath $fixtureMarker
+          $fixtureLines = $fixtureInvocation -split "`r?`n"
+          if ($fixtureLines.Count -lt 5 -or $fixtureLines[0].StartsWith($legacyRoot, [System.StringComparison]::OrdinalIgnoreCase) -or -not $fixtureInvocation.Contains("/currentuser") -or -not $fixtureInvocation.Contains("/S") -or -not $fixtureInvocation.Contains("/KEEP_APP_DATA") -or -not $fixtureInvocation.Contains("_?=$legacyRoot")) {
+            throw "Trusted migration invoked the legacy fixture with unexpected path or arguments"
+          }
+          $appExecutable = Get-ChildItem -LiteralPath $installRoot -Filter *.exe -File | Where-Object { $_.BaseName -ieq "wandao" } | Select-Object -First 1
+          if (-not $appExecutable) { throw "Installed Wandao executable was not found" }
+          "WANDAO_SMOKE_RESOURCES=$installRoot" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "WANDAO_SMOKE_EXECUTABLE=$($appExecutable.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Verify installed application and Plugin v1 resources
+        run: python scripts/package_smoke.py --resources "$env:WANDAO_SMOKE_RESOURCES" --executable "$env:WANDAO_SMOKE_EXECUTABLE"
+
+  build:
+    name: Build ${{ matrix.name }} (unsigned)
+    needs: quality-gate
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows x64
+            os: windows-latest
+            unsigned_command: npm run build:win:unsigned
+            artifact: wandao-Windows-x64
+            rust_target: x86_64-pc-windows-msvc
+          - name: macOS Apple-Silicon
+            os: macos-15
+            unsigned_command: npm run build:mac:arm64:unsigned
+            artifact: wandao-macOS-arm64
+            rust_target: aarch64-apple-darwin
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: wandao_electron/package-lock.json
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@1.88.0
+        with:
+          targets: ${{ matrix.rust_target }}
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: wandao_electron/src-tauri
+
+      - name: Install Tauri CLI
+        working-directory: wandao_electron
+        run: npm ci
+
+      - name: Verify desktop version contract
+        shell: bash
+        run: |
+          package_version="$(node -p "require('./wandao_electron/package.json').version")"
+          tauri_version="$(node -p "require('./wandao_electron/src-tauri/tauri.conf.json').version")"
+          cargo_version="$(awk '$0 == "[package]" { package = 1; next } /^\[/ { package = 0 } package && /^version = / { gsub(/[\"[:space:]]/, "", $3); print $3; exit }' wandao_electron/src-tauri/Cargo.toml)"
+          if [ "$package_version" != "$tauri_version" ] || [ "$package_version" != "$cargo_version" ]; then
+            echo "Desktop versions differ: package=$package_version tauri=$tauri_version cargo=$cargo_version" >&2
+            exit 1
+          fi
+          if [ "$GITHUB_REF_TYPE" = "tag" ] && [ "$GITHUB_REF_NAME" != "v${package_version}" ]; then
+            echo "Release tag $GITHUB_REF_NAME does not match desktop version v${package_version}" >&2
+            exit 1
+          fi
+
+      - name: Verify Apple Silicon build host
+        if: runner.os == 'macOS'
+        shell: bash
+        run: test "$(uname -m)" = "arm64"
+
+      - name: Build unsigned desktop package
+        working-directory: wandao_electron
+        run: ${{ matrix.unsigned_command }}
+
+      - name: Smoke test Windows installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem wandao_electron/src-tauri/target/release/bundle/nsis/*.exe | Select-Object -First 1
+          if (-not $installer) { throw "Tauri NSIS installer was not generated" }
+          $installRoot = Join-Path $env:RUNNER_TEMP "wandao-tauri-release-smoke"
+          $process = Start-Process -FilePath $installer.FullName -ArgumentList @("/S", "/SKIPLEGACYUNINSTALL", "/D=$installRoot") -PassThru -Wait
+          if ($process.ExitCode -ne 0) { throw "Installer failed with exit code $($process.ExitCode)" }
+          $appExecutable = Get-ChildItem -LiteralPath $installRoot -Filter *.exe -File | Where-Object { $_.BaseName -ieq "wandao" } | Select-Object -First 1
+          if (-not $appExecutable) { throw "Installed Wandao executable was not found" }
+          python scripts/package_smoke.py --resources "$installRoot" --executable "$($appExecutable.FullName)"
+
+      - name: Smoke test macOS application
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          app_path="$(find wandao_electron/src-tauri/target/aarch64-apple-darwin/release/bundle/macos -maxdepth 1 -name '*.app' -print -quit)"
+          test -n "$app_path"
+          bundle_executable="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app_path/Contents/Info.plist")"
+          minimum_system="$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$app_path/Contents/Info.plist")"
+          test "$minimum_system" = "11.0"
+          file "$app_path/Contents/MacOS/$bundle_executable" | grep -q 'arm64'
+          for resource in assets plugins providers python python-runtime; do
+            test -d "$app_path/Contents/Resources/$resource"
+          done
+          python scripts/package_smoke.py --resources "$app_path" --executable "$app_path"
+
+      - name: Prepare Windows release file
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force release-output | Out-Null
+          $source = Get-ChildItem wandao_electron/src-tauri/target/release/bundle/nsis/*.exe | Select-Object -First 1
+          if (-not $source) { throw "Tauri NSIS installer was not generated" }
+          $version = (Get-Content wandao_electron/package.json | ConvertFrom-Json).version
+          $suffix = if ($env:GITHUB_EVENT_NAME -eq "workflow_dispatch") { "UNSIGNED-SMOKE" } else { "setup" }
+          Copy-Item $source.FullName "release-output/Wandao-$version-win-x64-$suffix.exe"
+
+      - name: Prepare macOS release file
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          mkdir -p release-output
+          app_path="$(find wandao_electron/src-tauri/target/aarch64-apple-darwin/release/bundle/macos -maxdepth 1 -name '*.app' -print -quit)"
+          test -n "$app_path"
+          version="$(node -p "require('./wandao_electron/package.json').version")"
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            output="release-output/Wandao-${version}-macOS-arm64-UNSIGNED-SMOKE.zip"
+          else
+            output="release-output/Wandao-${version}-macOS-arm64.zip"
+          fi
+          ditto -c -k --sequesterRsrc --keepParent "$app_path" "$output"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ github.event_name == 'workflow_dispatch' && format('{0}-UNSIGNED-SMOKE', matrix.artifact) || matrix.artifact }}
+          path: release-output/*
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+          merge-multiple: true
+
+      - name: List release files
+        run: find release-artifacts -type f
+
+      - name: Generate release SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          path: release-artifacts
+          format: spdx-json
+          output-file: release-artifacts/wandao.spdx.json
+
+      - name: Generate SHA-256 checksums
+        working-directory: release-artifacts
+        run: sha256sum * > SHA256SUMS
+
+      - name: Attest release artifacts
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: release-artifacts/*
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Wandao ${{ github.ref_name }}
+          generate_release_notes: true
+          draft: true
+          make_latest: false
+          fail_on_unmatched_files: true
+          files: |
+            release-artifacts/*.exe
+            release-artifacts/*.zip
+            release-artifacts/SHA256SUMS
+            release-artifacts/wandao.spdx.json

@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import argparse
+import os
 import py_compile
+import shutil
 import subprocess
 import sys
 import unittest
@@ -12,19 +14,19 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+RUST_TOOLCHAIN = "1.88.0"
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from scripts.validate_providers import validate_repository
 NODE_CHECK_FILES = [
-    "wandao_electron/main.js",
-    "wandao_electron/preload.js",
     "wandao_electron/plugin_format.js",
     "wandao_electron/plugin_manager.js",
     "wandao_electron/process_result.js",
     "wandao_electron/command_security.js",
     "wandao_electron/provider_script_routing.js",
     "wandao_electron/plugin_state_migration.js",
+    "wandao_electron/renderer/tauri_bridge.js",
     "wandao_electron/renderer/app.js",
     "wandao_electron/provider_legacy_compat.js",
     "wandao_electron/renderer/providers.js",
@@ -44,6 +46,16 @@ NODE_CHECK_FILES = [
     "scripts/plugin_release_policy.js",
     "wandao_electron/scripts/prepare_python_runtime.py",
 ]
+
+# tests_js 走目录级发现，不再维护手写清单：新增的 *.test.js 自动纳入门禁。
+NODE_TEST_DIR = "tests_js"
+
+TAURI_ROOT = REPO_ROOT / "wandao_electron" / "src-tauri"
+
+
+def iter_node_test_files() -> list[Path]:
+    """Discover every tests_js/*.test.js for the mandatory Node test gate."""
+    return sorted((REPO_ROOT / NODE_TEST_DIR).glob("*.test.js"))
 
 
 def iter_python_files() -> list[Path]:
@@ -95,30 +107,11 @@ def run_node_checks() -> None:
         subprocess.run(["node", "--check", str(path)], cwd=REPO_ROOT, check=True)
         checked += 1
     subprocess.run(["node", "scripts/validate_plugins.js"], cwd=REPO_ROOT, check=True)
+    tests = iter_node_test_files()
+    if not tests:
+        raise SystemExit(f"{NODE_TEST_DIR} 下没有发现任何 *.test.js")
     subprocess.run(
-        [
-            "node", "--test",
-            "tests_js/plugin_manager.test.js",
-            "tests_js/process_result.test.js",
-            "tests_js/command_security.test.js",
-            "tests_js/provider_script_routing.test.js",
-            "tests_js/plugin_release_policy.test.js",
-            "tests_js/plugin_state_migration.test.js",
-            "tests_js/provider_legacy_compat.test.js",
-            "tests_js/time_format.test.js",
-            "tests_js/form_drafts.test.js",
-            "tests_js/recent_inputs.test.js",
-            "tests_js/manifest_form_validation.test.js",
-            "tests_js/import_write_guidance.test.js",
-            "tests_js/task_accessibility.test.js",
-            "tests_js/task_report.test.js",
-            "tests_js/task_history.test.js",
-            "tests_js/task_history_persistence.test.js",
-            "tests_js/task_resume.test.js",
-            "tests_js/provider_toc_contract.test.js",
-            "tests_js/toc_tree.test.js",
-            "tests_js/toc_rendering.test.js",
-        ],
+        ["node", "--test", *[path.relative_to(REPO_ROOT).as_posix() for path in tests]],
         cwd=REPO_ROOT,
         check=True,
     )
@@ -189,7 +182,28 @@ def run_node_checks() -> None:
         cwd=REPO_ROOT,
         check=True,
     )
-    print(f"Node syntax check passed ({checked} files).")
+    print(f"Node syntax check passed ({checked} files, {len(tests)} test files).")
+
+
+def run_rust_checks() -> None:
+    if os.environ.get("WANDAO_SKIP_RUST_CHECKS") == "1":
+        print("Skipping Rust checks by WANDAO_SKIP_RUST_CHECKS=1.")
+        return
+    rustup = shutil.which("rustup")
+    if not rustup:
+        raise SystemExit(
+            f"Rust quality checks require rustup and the pinned {RUST_TOOLCHAIN} toolchain"
+        )
+    cargo = [rustup, "run", RUST_TOOLCHAIN, "cargo"]
+    subprocess.run([*cargo, "fmt", "--all", "--", "--check"], cwd=TAURI_ROOT, check=True)
+    subprocess.run([*cargo, "check", "--all-targets", "--locked"], cwd=TAURI_ROOT, check=True)
+    subprocess.run([*cargo, "test", "--all-targets", "--locked"], cwd=TAURI_ROOT, check=True)
+    subprocess.run(
+        [*cargo, "clippy", "--all-targets", "--locked", "--", "-D", "warnings"],
+        cwd=TAURI_ROOT,
+        check=True,
+    )
+    print("Rust format, check, test and Clippy checks passed.")
 
 
 def run_diff_check() -> None:
@@ -223,6 +237,7 @@ def main(argv: list[str] | None = None) -> int:
     run_unittest()
     if not args.skip_node:
         run_node_checks()
+    run_rust_checks()
     run_diff_check()
     print("Quality check passed.")
     return 0

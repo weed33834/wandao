@@ -23,6 +23,7 @@
 
   function createProcessor(deps = {}) {
     let lineBuffer = '';
+    let tocDiscovered = 0;
     const appendDetailedLog = deps.appendDetailedLog || (() => {});
     const appendUserLog = deps.appendUserLog || (() => {});
     const updateProgress = deps.updateProgress || (() => {});
@@ -102,6 +103,10 @@
         }
         return null;
       }
+      if (/^toc\.(started|root|progress|completed)$/.test(eventName) || /^toc\.cache\./.test(eventName)) {
+        if (!message) return null;
+        return { type, message };
+      }
       if (eventName === 'document.export.failed' && type !== 'error') {
         if (/video-topic/i.test(error || message)) {
           return { type: 'warn', message: `已跳过视频帖：${doc || '未命名帖子'}` };
@@ -120,6 +125,23 @@
     }
 
     function updateProgressFromEvent(event) {
+      const eventName = String(event.event || '');
+      if (eventName.startsWith('toc.')) {
+        if (eventName === 'toc.started' || eventName === 'toc.root') tocDiscovered = 0;
+        const stats = event.stats || {};
+        const explicit = Number(stats.discovered ?? event.progress?.current ?? 0);
+        const discoveredMatch = /已发现\s*(\d+)\s*个节点/.exec(String(event.message || ''));
+        const discoveredFromMessage = Number(discoveredMatch?.[1] || 0);
+        tocDiscovered = Math.max(
+          tocDiscovered,
+          Number.isFinite(explicit) ? explicit : 0,
+          Number.isFinite(discoveredFromMessage) ? discoveredFromMessage : 0
+        );
+        const base = tocDiscovered ? `正在读取目录，已发现 ${tocDiscovered} 个节点` : '正在读取目录…';
+        const detail = eventName === 'toc.page' && event.message ? `${base}，${compactDiagnostic(event.message, 140)}` : base;
+        updateProgress(0, 0, detail);
+        return;
+      }
       if (event.event !== 'task.progress' || !event.progress) return;
       const current = Number(event.progress.current || 0);
       const total = Number(event.progress.total || 0);
@@ -172,6 +194,7 @@
 
     function reset() {
       lineBuffer = '';
+      tocDiscovered = 0;
     }
 
     return {

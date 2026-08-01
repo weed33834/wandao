@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import hashlib
 import html
 import json
 import mimetypes
@@ -59,6 +60,9 @@ DOCUMENT_REQUEST_TIMEOUT_SECONDS = 45
 ASSET_REQUEST_TIMEOUT_SECONDS = 15
 ASSET_DOWNLOAD_WORKERS = 6
 ASSET_DIRECT_RETRIES = 3
+TOC_CACHE_FILENAME = ".dingtalk_toc_cache.json"
+TOC_CACHE_VERSION = 1
+TOC_CACHE_TTL_SECONDS = 15 * 60
 
 
 @dataclass(frozen=True)
@@ -125,6 +129,17 @@ def is_trusted_asset_url(value: str) -> bool:
         or host.endswith(".alicdn.com")
         or host.endswith(".aliyuncs.com")
     )
+
+
+def resolve_asset_url(value: str, page_url: str) -> str:
+    """Resolve DingTalk root-relative assets without broadening the allowlist."""
+    source = str(value or "").strip()
+    parsed = urllib.parse.urlsplit(source)
+    if parsed.scheme or parsed.netloc or not source.startswith("/") or source.startswith("//"):
+        return source
+    page = parse_dingtalk_url(page_url)
+    origin = f"https://{page.hostname}"
+    return urllib.parse.urljoin(origin, source)
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -283,7 +298,7 @@ DINGTALK_HELPER_JS = r"""
   // Bump this protocol whenever the helper behavior changes.  The plugin
   // browser stays alive between actions, so keeping the old helper version
   // would silently bypass a newly installed timeout or safety fix.
-  if (window.__wandaoDingTalk && window.__wandaoDingTalk.version === 4) return true;
+  if (window.__wandaoDingTalk && window.__wandaoDingTalk.version === 5) return true;
   const base = location.origin;
   const fetchWithTimeout = async (url, options = {}, timeoutMs = 45000) => {
     const controller = new AbortController();
@@ -308,23 +323,48 @@ DINGTALK_HELPER_JS = r"""
       if (timer) clearTimeout(timer);
     }
   };
+  const fetchJsonWithTimeout = async (url, options = {}, timeoutMs = 45000) => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch(url, Object.assign({}, options, { signal: controller.signal }));
+      let payload = {};
+      try {
+        // Keep the timeout active while the response body is still streaming.
+        // A DingTalk API can send headers successfully but then never finish
+        // the JSON body; timing out only fetch() would leave this Promise stuck.
+        payload = await response.json();
+      } catch (error) {
+        if (error && error.name === 'AbortError') throw error;
+      }
+      return { response, payload };
+    } catch (error) {
+      if (error && error.name === 'AbortError') throw new Error(`请求超时（${Math.ceil(timeoutMs / 1000)} 秒）`);
+      throw error;
+    } finally {
+      clearTimeout(timer);
+    }
+  };
   const requestJson = async (path, options = {}, timeoutMs = 45000) => {
-    const tokenResponse = await fetchWithTimeout('/portal/api/v1/token/getAccessToken', { method: 'POST', credentials: 'include' }, 30000);
-    const tokenPayload = await tokenResponse.json().catch(() => ({}));
+    const { payload: tokenPayload } = await fetchJsonWithTimeout(
+      '/portal/api/v1/token/getAccessToken', { method: 'POST', credentials: 'include' }, 30000
+    );
     const token = tokenPayload && tokenPayload.data && tokenPayload.data.accessToken;
     if (!token) throw new Error('钉钉登录已失效，请重新登录并保存会话。');
     const headers = Object.assign({}, options.headers || {}, { 'A-Token': token });
     let corpId = (document.cookie.match(/(?:^|;\s*)portal_corp_id=([^;]+)/) || [])[1] || '';
     if (!corpId) {
-      const userResponse = await fetchWithTimeout('/api/users/getUserInfo', { method: 'POST', credentials: 'include', headers }, 30000);
-      const userPayload = await userResponse.json().catch(() => ({}));
+      const { payload: userPayload } = await fetchJsonWithTimeout(
+        '/api/users/getUserInfo', { method: 'POST', credentials: 'include', headers }, 30000
+      );
       const orgs = (userPayload.data && (userPayload.data.orgs || userPayload.data.orgDTOList)) || [];
       const main = orgs.find((item) => item && item.isMainOrg) || orgs[0] || {};
       corpId = main.corpId || main.id || '';
     }
     if (corpId) headers['corp-id'] = decodeURIComponent(corpId);
-    const response = await fetchWithTimeout(base + path, Object.assign({ credentials: 'include' }, options, { headers }), timeoutMs);
-    const payload = await response.json().catch(() => ({}));
+    const { response, payload } = await fetchJsonWithTimeout(
+      base + path, Object.assign({ credentials: 'include' }, options, { headers }), timeoutMs
+    );
     if (!response.ok || !payload.isSuccess) {
       const message = (payload && (payload.message || payload.errorMessage || payload.errorCode)) || `HTTP ${response.status}`;
       throw new Error(String(message));
@@ -332,7 +372,7 @@ DINGTALK_HELPER_JS = r"""
     return payload.data || {};
   };
   const api = {
-    version: 4,
+    version: 5,
     profile: async () => {
       const data = await requestJson('/api/users/getUserInfo', { method: 'POST' });
       const user = data.user || {};
@@ -405,12 +445,29 @@ def resolve_space_root_uuid(cdp: CDPClient, source_url: str) -> str:
     raise ExportError("未能从钉钉知识库根页面读取目录。请确认已登录并能在浏览器中看到左侧目录后重试。")
 
 
+def optional_bool(value: Any) -> bool | None:
+    """Normalize DingTalk boolean fields without treating ``"false"`` as true."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)) and value in {0, 1}:
+        return bool(value)
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1"}:
+            return True
+        if normalized in {"false", "0", ""}:
+            return False
+    return None
+
+
 def entry_from_raw(raw: dict[str, Any], parent_uuid: str = "") -> DingEntry:
     uuid = str(raw.get("dentryUuid") or raw.get("dentryId") or "")
     if not uuid:
         raise ExportError("钉钉目录返回了缺少 dentryUuid 的项目。")
     content_type = str(raw.get("contentType") or "").lower()
     dentry_type = str(raw.get("dentryType") or "").lower()
+    is_folder = dentry_type == "folder" or content_type == "folder"
+    declared_has_children = optional_bool(raw.get("hasChildren"))
     return DingEntry(
         uuid=uuid,
         key=str(raw.get("dentryKey") or ""),
@@ -418,9 +475,114 @@ def entry_from_raw(raw: dict[str, Any], parent_uuid: str = "") -> DingEntry:
         title=str(raw.get("name") or raw.get("title") or uuid),
         content_type=content_type,
         parent_uuid=str(raw.get("parentDentryUuid") or parent_uuid or ""),
-        is_folder=dentry_type == "folder" or content_type == "folder",
-        has_children=bool(raw.get("hasChildren")) or dentry_type == "folder",
+        is_folder=is_folder,
+        # Some responses omit hasChildren for folders. Preserve the old safe
+        # fallback only in that case; an explicit false must remain false.
+        has_children=is_folder if declared_has_children is None else declared_has_children,
     )
+
+
+def toc_cache_path() -> Path:
+    return default_data_dir() / TOC_CACHE_FILENAME
+
+
+def toc_cache_key(args: argparse.Namespace) -> str:
+    """Create a stable, non-reversible key without persisting the source URL."""
+    source_url = str(getattr(args, "source_url", "") or "").strip()
+    parsed = parse_dingtalk_url(source_url)
+    canonical_path = parsed.path.rstrip("/") or "/"
+    scope = str(getattr(args, "document_scope", "selected") or "selected")
+    source = f"{parsed.scheme.lower()}://{(parsed.hostname or '').lower()}{canonical_path}|{scope}"
+    return hashlib.sha256(source.encode("utf-8")).hexdigest()
+
+
+def toc_cache_record(entry: DingEntry) -> dict[str, Any]:
+    """Persist a short-lived private tree snapshot for the immediate export step."""
+    return {
+        "uuid": entry.uuid,
+        "dentryKey": entry.key,
+        "docKey": entry.doc_key,
+        "title": entry.title,
+        "contentType": entry.content_type,
+        "parentUuid": entry.parent_uuid,
+        "isFolder": entry.is_folder,
+        "hasChildren": entry.has_children,
+    }
+
+
+def entry_from_toc_cache(raw: Any) -> DingEntry:
+    if not isinstance(raw, dict):
+        raise ValueError("缓存目录项不是对象")
+    uuid = str(raw.get("uuid") or "").strip()
+    parent_uuid = str(raw.get("parentUuid") or "").strip()
+    if not re.fullmatch(r"[A-Za-z0-9_-]{4,200}", uuid):
+        raise ValueError("缓存目录项的 ID 无效")
+    if parent_uuid and not re.fullmatch(r"[A-Za-z0-9_-]{4,200}", parent_uuid):
+        raise ValueError("缓存目录项的父级 ID 无效")
+    content_type = str(raw.get("contentType") or "").lower()
+    is_folder = optional_bool(raw.get("isFolder"))
+    if is_folder is None:
+        is_folder = content_type == "folder"
+    has_children = optional_bool(raw.get("hasChildren"))
+    if has_children is None:
+        has_children = is_folder
+    return DingEntry(
+        uuid=uuid,
+        # The cache is written with write_private_json and never emitted in
+        # stdout, task history, reports, or diagnostic logs. Keeping these
+        # opaque keys avoids an extra unthrottled info request per document.
+        key=str(raw.get("dentryKey") or ""),
+        doc_key=str(raw.get("docKey") or ""),
+        title=str(raw.get("title") or uuid),
+        content_type=content_type,
+        parent_uuid=parent_uuid,
+        is_folder=is_folder,
+        has_children=has_children,
+    )
+
+
+def save_toc_cache(args: argparse.Namespace, entries: list[DingEntry]) -> None:
+    payload = {
+        "version": TOC_CACHE_VERSION,
+        "savedAt": time.time(),
+        "sourceKey": toc_cache_key(args),
+        "entries": [toc_cache_record(entry) for entry in entries],
+    }
+    try:
+        write_private_json(toc_cache_path(), payload)
+    except OSError as exc:
+        emit(args, f"钉钉目录缓存保存失败，本次不影响导出：{exc}", event="toc.cache.write_failed", level="warn")
+
+
+def load_recent_toc_cache(args: argparse.Namespace, selected_ids: set[str]) -> list[DingEntry] | None:
+    try:
+        payload = json.loads(toc_cache_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict) or payload.get("version") != TOC_CACHE_VERSION:
+        return None
+    try:
+        saved_at = float(payload.get("savedAt") or 0)
+    except (TypeError, ValueError):
+        return None
+    age = time.time() - saved_at
+    if age < -60 or age > TOC_CACHE_TTL_SECONDS or payload.get("sourceKey") != toc_cache_key(args):
+        return None
+    records = payload.get("entries")
+    if not isinstance(records, list) or not records:
+        return None
+    try:
+        entries = [entry_from_toc_cache(record) for record in records]
+    except ValueError:
+        return None
+    available_ids = {
+        entry.uuid
+        for entry in entries
+        if not entry.is_folder and entry.content_type in SUPPORTED_DOCUMENT_TYPES
+    }
+    if selected_ids and not selected_ids.issubset(available_ids):
+        return None
+    return entries
 
 
 def root_entry(cdp: CDPClient, source_url: str, args: argparse.Namespace) -> DingEntry:
@@ -458,19 +620,50 @@ def children_of(cdp: CDPClient, entry: DingEntry, args: argparse.Namespace) -> l
     while True:
         check_stopped(args)
         page_number += 1
-        emit(args, f"正在读取钉钉目录第 {page_number} 页…", event="toc.page")
+        emit(
+            args,
+            f"正在读取钉钉目录「{entry.title}」第 {page_number} 页…",
+            event="toc.page",
+            stats={"page": page_number, "discovered": len(children)},
+        )
         throttle_request(args)
         payload = call_helper(cdp, "children", entry.uuid, cursor)
         raw_children = payload.get("children") or []
         if not isinstance(raw_children, list):
             raise ExportError("钉钉目录接口返回的 children 不是列表。")
         children.extend(entry_from_raw(item, entry.uuid) for item in raw_children if isinstance(item, dict))
+        has_more = optional_bool(payload.get("hasMore"))
         next_cursor = str(payload.get("loadMoreId") or payload.get("nextLoadMoreId") or "")
+        # DingTalk currently returns a loadMoreId even when hasMore is false.
+        # That cursor is not an instruction to request an extra empty page.
+        if has_more is False:
+            return children
+        if has_more is not True:
+            # Older endpoint variants did not expose hasMore. Keep their
+            # previous conservative behavior: follow new cursors, but stop
+            # safely when one is absent or repeats instead of rejecting a
+            # completed legacy listing as an error.
+            if not next_cursor:
+                return children
+            if next_cursor == cursor or next_cursor in seen_cursors:
+                emit(
+                    args,
+                    f"钉钉目录分页返回了重复游标，已停止重复读取目录「{entry.title}」。",
+                    event="toc.pagination.repeated",
+                    level="warn",
+                )
+                return children
+            seen_cursors.add(next_cursor)
+            cursor = next_cursor
+            continue
         if not next_cursor:
-            return children
-        if next_cursor in seen_cursors:
-            emit(args, "钉钉目录分页返回了重复游标，已停止重复读取。", event="toc.pagination.repeated", level="warn")
-            return children
+            message = f"钉钉目录分页异常：目录「{entry.title}」第 {page_number} 页仍显示有更多内容，但没有下一页游标。"
+            emit(args, message, event="toc.pagination.invalid", level="error")
+            raise ExportError(message)
+        if next_cursor == cursor or next_cursor in seen_cursors:
+            message = f"钉钉目录分页异常：目录「{entry.title}」第 {page_number} 页仍显示有更多内容，但下一页游标重复。"
+            emit(args, message, event="toc.pagination.invalid", level="error")
+            raise ExportError(message)
         seen_cursors.add(next_cursor)
         cursor = next_cursor
 
@@ -484,7 +677,7 @@ def collect_tree(cdp: CDPClient, source_url: str, args: argparse.Namespace) -> l
     processed_folders = 0
     while pending:
         parent = pending.pop(0)
-        if not parent.has_children:
+        if not parent.is_folder or not parent.has_children:
             continue
         processed_folders += 1
         for child in children_of(cdp, parent, args):
@@ -492,10 +685,15 @@ def collect_tree(cdp: CDPClient, source_url: str, args: argparse.Namespace) -> l
                 continue
             visited.add(child.uuid)
             result.append(child)
-            if child.has_children:
+            if child.is_folder and child.has_children:
                 pending.append(child)
         if processed_folders == 1 or processed_folders % 10 == 0:
-            emit(args, f"钉钉目录读取中：已检查 {processed_folders} 个目录节点，已发现 {len(result)} 个节点。", event="toc.progress")
+            emit(
+                args,
+                f"钉钉目录读取中：已检查 {processed_folders} 个文件夹，已发现 {len(result)} 个节点。",
+                event="toc.progress",
+                stats={"scannedFolders": processed_folders, "discovered": len(result)},
+            )
     return result
 
 
@@ -649,6 +847,7 @@ class DingMarkdownRenderer:
 
 def document_payload(cdp: CDPClient, entry: DingEntry, args: argparse.Namespace) -> dict[str, Any]:
     if not entry.key or not entry.doc_key:
+        throttle_request(args)
         fresh = entry_from_raw(call_helper(cdp, "info", entry.uuid))
         entry = fresh
     if not entry.key:
@@ -738,6 +937,7 @@ def rewrite_images(
     md_path: Path,
     args: argparse.Namespace,
     asset_prefix: str = "",
+    page_url: str = ENTRY_URL,
 ) -> tuple[str, list[dict[str, str]], int]:
     failures: list[dict[str, str]] = []
     saved = 0
@@ -750,16 +950,22 @@ def rewrite_images(
             seen_sources.add(image.source)
             unique_images.append(image)
     direct_jobs: dict[int, tuple[ImageRef, Any]] = {}
+    resolved_sources = {
+        image.source: resolve_asset_url(image.source, page_url)
+        for image in unique_images
+    }
     with ThreadPoolExecutor(max_workers=ASSET_DOWNLOAD_WORKERS, thread_name_prefix="wandao-dingtalk-asset") as pool:
         for index, image in enumerate(unique_images, start=1):
-            if not is_trusted_asset_url(image.source):
+            source = resolved_sources[image.source]
+            if not is_trusted_asset_url(source):
                 continue
             check_stopped(args)
             throttle_request(args)
-            direct_jobs[index] = (image, pool.submit(download_direct_asset_with_retry, image.source))
+            direct_jobs[index] = (image, pool.submit(download_direct_asset_with_retry, source))
         for index, image in enumerate(unique_images, start=1):
             emit(args, f"正在下载钉钉图片：{index}/{len(unique_images)}", event="asset.download.started", progress={"current": index, "total": len(unique_images)})
-            if not is_trusted_asset_url(image.source):
+            source = resolved_sources[image.source]
+            if not is_trusted_asset_url(source):
                 replacements[image.source] = image.source
                 failures.append({"url": safe_resource_url(image.source), "error": "图片地址不在受信任的钉钉资源域名中"})
                 continue
@@ -768,15 +974,15 @@ def rewrite_images(
                 raw, content_type = job.result()
             except Exception as direct_exc:
                 try:
-                    raw, content_type = download_image_in_browser(cdp, image.source)
+                    raw, content_type = download_image_in_browser(cdp, source)
                 except Exception as browser_exc:  # noqa: BLE001 - a resource failure should not discard its document.
                     replacements[image.source] = image.source
                     failures.append({
-                        "url": safe_resource_url(image.source),
+                        "url": safe_resource_url(source),
                         "error": f"受限直连下载失败：{direct_exc}；浏览器读取失败：{browser_exc}",
                     })
                     continue
-            replacements[image.source] = save_image(raw, content_type, image.source, assets_dir, index, asset_prefix)
+            replacements[image.source] = save_image(raw, content_type, source, assets_dir, index, asset_prefix)
             saved += 1
     for source, local_path in replacements.items():
         markdown = markdown.replace(f"]({source})", f"]({local_path})")
@@ -863,7 +1069,9 @@ def scan_dingtalk(args: argparse.Namespace) -> dict[str, Any]:
     emit(args, "正在打开钉钉目标页面并读取目录…", event="toc.started")
     cdp, process = connect_dingtalk_browser(args, args.source_url or ENTRY_URL)
     try:
-        result = toc_json(collect_tree(cdp, args.source_url, args))
+        entries = collect_tree(cdp, args.source_url, args)
+        save_toc_cache(args, entries)
+        result = toc_json(entries)
         emit(args, f"钉钉目录读取完成：共 {len(result['nodes'])} 个节点。", event="toc.completed")
         return result
     finally:
@@ -879,9 +1087,20 @@ def export_dingtalk(args: argparse.Namespace) -> dict[str, Any]:
     checkpoint = open_checkpoint_from_args(args, "dingtalk-export", "export")
     cdp, process = connect_dingtalk_browser(args, args.source_url or ENTRY_URL)
     try:
-        entries = collect_tree(cdp, args.source_url, args)
+        selected_ids = set(args.selected_doc_ids or [])
+        entries = load_recent_toc_cache(args, selected_ids)
+        if entries is None:
+            entries = collect_tree(cdp, args.source_url, args)
+            save_toc_cache(args, entries)
+        else:
+            emit(
+                args,
+                f"复用刚读取的钉钉目录：共 {len(entries)} 个节点，跳过重复目录扫描。",
+                event="toc.cache.hit",
+                stats={"discovered": len(entries)},
+            )
         by_uuid = {entry.uuid: entry for entry in entries}
-        documents = select_entries(entries, set(args.selected_doc_ids or []))
+        documents = select_entries(entries, selected_ids)
         paths = {entry.uuid: relative_document_path(by_uuid, entry, output) for entry in documents}
         if checkpoint:
             checkpoint.start_task({"source": args.source_url, "outputDir": str(output), "totalDocs": len(documents), "resume": bool(args.resume)})
@@ -933,6 +1152,7 @@ def export_dingtalk(args: argparse.Namespace) -> dict[str, Any]:
                     md_path,
                     args,
                     asset_prefix=safe_path_segment(entry.uuid, "document", 32),
+                    page_url=args.source_url or ENTRY_URL,
                 )
                 md_path.parent.mkdir(parents=True, exist_ok=True)
                 md_path.write_text(markdown, encoding="utf-8")

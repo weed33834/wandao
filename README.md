@@ -1,142 +1,162 @@
 <p align="center">
-  <img src="docs/images/wandao-logo.png" alt="万能导 Wandao Logo" width="96">
+  <img src="docs/images/wandao-logo.png" alt="万能导 Wandao Logo" width="108">
 </p>
 
 <h1 align="center">万能导 Wandao ✨</h1>
 
 <p align="center">
-  让知识没有壁垒，多平台文档互转。用自动化脚本代替手动复制、整理目录、搬运文档的重复劳动。
+  <strong>让知识没有壁垒，让多平台文档迁移更简单。</strong>
 </p>
 
 <p align="center">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-AGPL--3.0-blue.svg" alt="License"></a>
-  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-bundled%20in%20release-blue" alt="Python"></a>
-  <a href="#系统要求"><img src="https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey" alt="Platform"></a>
-  <a href="https://github.com/tllovesxs/wandao"><img src="https://img.shields.io/badge/GitHub-tllovesxs%2Fwandao-black" alt="GitHub"></a>
-  <a href="https://gitee.com/shi-xiansong/wandao"><img src="https://img.shields.io/badge/Gitee-shi--xiansong%2Fwandao-red" alt="Gitee"></a>
+  将你有权访问的知识库导出为本地 Markdown，或把本地 Markdown 导入其他平台。<br>
+  尽量保留目录结构、正文格式、图片与附件，告别重复复制和手动整理。
 </p>
 
 <p align="center">
-  <img src="https://cdn.jsdelivr.net/gh/edent/SuperTinyIcons/images/svg/windows.svg" alt="Windows" title="Windows" width="24">
-  <img src="https://cdn.jsdelivr.net/gh/edent/SuperTinyIcons/images/svg/apple.svg" alt="macOS" title="macOS" width="24">
-  <img src="https://cdn.jsdelivr.net/gh/edent/SuperTinyIcons/images/svg/linux.svg" alt="Linux" title="Linux" width="24">
-  <img src="https://cdn.jsdelivr.net/gh/edent/SuperTinyIcons/images/svg/python.svg" alt="Python" title="Python" width="24">
-  <img src="https://cdn.jsdelivr.net/gh/edent/SuperTinyIcons/images/svg/markdown.svg" alt="Markdown" title="Markdown" width="24">
-  <img src="https://cdn.jsdelivr.net/gh/edent/SuperTinyIcons/images/svg/evernote.svg" alt="Evernote" title="印象笔记 / Evernote" width="24">
+  <a href="https://github.com/tllovesxs/wandao/releases"><img src="https://img.shields.io/github/v/release/tllovesxs/wandao?label=Release&color=2f80ed" alt="最新版本"></a>
+  <a href="https://github.com/tllovesxs/wandao/releases"><img src="https://img.shields.io/github/downloads/tllovesxs/wandao/total?label=Downloads&color=22a06b" alt="累计下载"></a>
+  <a href="https://github.com/tllovesxs/wandao/stargazers"><img src="https://img.shields.io/github/stars/tllovesxs/wandao?style=flat&color=f5a623" alt="GitHub Stars"></a>
+  <a href="https://github.com/tllovesxs/wandao/network/members"><img src="https://img.shields.io/github/forks/tllovesxs/wandao?label=Forks&color=4f86c6" alt="GitHub Forks"></a>
+  <a href="https://github.com/tllovesxs/wandao/issues?q=is%3Aissue"><img src="https://img.shields.io/github/issues-search?query=repo%3Atllovesxs%2Fwandao%20is%3Aissue&label=Issues&color=8a63d2" alt="全部 GitHub Issues"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-AGPL--3.0-blue.svg" alt="AGPL-3.0 License"></a>
+  <img src="https://img.shields.io/badge/Platform-Windows%20x64%20%7C%20macOS%20arm64-lightgrey" alt="Windows x64 与 macOS Apple Silicon">
 </p>
 
-万能导是一个多平台(目前已支持飞书,语雀,阿里云,印象笔记,有道云笔记,为知笔记,OneNote,知识星球,ima,钉钉文档,息流,Obsidian,本地md)知识库 Markdown 导入导出工具。你可以把自己有权限访问的项目资料、团队知识库、课程文档导出为本地 Markdown，也可以把整理好的本地 Markdown 再导入到支持的平台中。全网效果最好的导入导出工具,在文档格式,图片,目录结构方面的导出质量效果最好.
-
-如果还有你不满意的地方,请提issues,你任何需求都会被重视.
-
-它适合用来做知识备份、平台迁移、项目学习资料整理，以及把“教学文档 + 源码项目”放在一起交给 AI 阅读。
-
-万能导:让知识没有壁垒,助你弯道超车.
-
-Author: `tllovesxs`
-
-## 📌 项目信息
-
-| 项目 | 内容 |
-|------|------|
-| <img src="https://cdn.jsdelivr.net/gh/edent/SuperTinyIcons/images/svg/github.svg" alt="GitHub" width="16"> GitHub | [tllovesxs/wandao](https://github.com/tllovesxs/wandao) |
-| Gitee | [shi-xiansong/wandao](https://gitee.com/shi-xiansong/wandao) |
-| 📦 发行版下载 | [GitHub Releases](https://github.com/tllovesxs/wandao/releases) |
-| 🐛 问题反馈 | [GitHub Issues](https://github.com/tllovesxs/wandao/issues) / [Gitee Issues](https://gitee.com/shi-xiansong/wandao/issues) |
-| 📖 使用教程 | [docs/使用教程.md](docs/使用教程.md) |
-| 🤝 共创流程 | [docs/共创流程.md](docs/共创流程.md) |
-| 🧩 新平台插件开发 | [docs/在线插件开发与发布.md](docs/在线插件开发与发布.md) |
-| 🚢 发布与回滚手册 | [docs/发布与回滚手册.md](docs/发布与回滚手册.md) |
-| 🗃️ 本地数据存储策略 | [docs/本地数据存储策略.md](docs/本地数据存储策略.md) |
-| 🔐 安全策略 | [SECURITY.md](SECURITY.md) |
-| 🔌 Provider v1 兼容说明 | [docs/Provider接入说明.md](docs/Provider接入说明.md) |
-| 🧰 旧文件型 Provider 维护 | [docs/插件开发指南.md](docs/插件开发指南.md) |
-| 🧠 项目学习提示词 | [prompts/项目学习导师提示词.md](prompts/项目学习导师提示词.md) |
-| 💬 作者微信 | `pressure_spring` |
-| 📮 联系邮箱 | `tl200599@163.com` |
-
-## 🖼️ 截图预览
-
-<p align="center"><strong>首页</strong></p>
 <p align="center">
-  <img src="docs/images/wandao-home.png" alt="万能导桌面端首页" width="1000">
+  <img src="https://cdn.jsdelivr.net/gh/edent/SuperTinyIcons/images/svg/windows.svg" alt="Windows" title="Windows" width="25">
+  &nbsp;
+  <img src="https://cdn.jsdelivr.net/gh/edent/SuperTinyIcons/images/svg/apple.svg" alt="macOS" title="macOS" width="25">
+  &nbsp;
+  <img src="https://cdn.jsdelivr.net/gh/edent/SuperTinyIcons/images/svg/markdown.svg" alt="Markdown" title="Markdown" width="25">
+  &nbsp;
+  <img src="https://cdn.jsdelivr.net/gh/edent/SuperTinyIcons/images/svg/python.svg" alt="Python" title="Python" width="25">
 </p>
 
-<p align="center"><strong>平台中心</strong></p>
 <p align="center">
-  <img src="docs/images/wandao-platform-center.png" alt="万能导桌面端平台中心" width="1000">
+  <strong><a href="https://github.com/tllovesxs/wandao/releases">📦 下载最新版</a></strong>
+  &nbsp;·&nbsp;
+  <a href="docs/使用教程.md">📖 使用教程</a>
+  &nbsp;·&nbsp;
+  <a href="prompts/项目学习导师提示词.md">🧠 AI 辅助学习</a>
+  &nbsp;·&nbsp;
+  <a href="https://github.com/tllovesxs/wandao/issues">🐛 反馈问题</a>
+  &nbsp;·&nbsp;
+  <a href="docs/共创流程.md">🤝 参与共创</a>
 </p>
 
-## 🚀 支持能力
+万能导是一个多平台知识库 Markdown 导入导出工具，目前支持飞书、语雀、阿里云 Thoughts、印象笔记、有道云笔记、为知笔记、OneNote、知识星球、ima 知识库、钉钉文档、WPS 文档、息流、Obsidian、Notion 和本地 Markdown 等内容来源与目标平台。
 
-### 📤 导出到本地
+你可以把自己有权限访问的项目资料、团队知识库和课程文档导出为本地 Markdown，也可以把整理好的本地 Markdown 导入到支持的平台。万能导重点处理文档格式、图片、附件和目录层级，适合知识备份、平台迁移、学习资料整理，以及将“教学文档 + 源码项目”交给 AI 一起阅读。
 
-| 平台 | 能力 |
-|------|------|
-| 🌟 知识星球 | 支持项目、专栏、帖子、文章页导出，可选导出可见评论区 |
-| 🪶 语雀 | 支持任意知识库导出，并尽量本地化正文图片和附件 |
-| 🪽 飞书 Wiki | 支持 Wiki 知识库导出为 Markdown |
-| ☁️ 阿里云 Thoughts | 支持工作区文档导出为 Markdown |
-| <img src="https://cdn.jsdelivr.net/gh/edent/SuperTinyIcons/images/svg/evernote.svg" alt="Evernote" width="16"> 印象笔记 | 支持同步后按笔记本导出 Markdown |
-| 📝 有道云笔记 | 支持浏览器登录后读取目录树，导出 Markdown、图片和附件 |
-| 📒 为知笔记 | 支持网页版登录后导出 Markdown，并保留目录和图片 |
-| 🗂️ OneNote | 支持 Windows 桌面版 OneNote 导出 Markdown，并保留笔记本/分区/页面层级 |
-| 🤖 ima 知识库 | 支持读取知识库目录树，按知识库、文件夹或文件勾选导出 |
+如果有未能完整导出的内容或希望支持的新平台，欢迎提交 [GitHub Issue](https://github.com/tllovesxs/wandao/issues)。建议新平台不要求参与开发，平台使用经验、公开资料和测试意愿同样有价值；每一条可复现的反馈和共创需求都会被认真审查。
 
-### 📥 导入到平台
+如果这个项目对你有帮助，欢迎在 GitHub 点一个 Star ⭐,这对我真的很重要~
 
-| 平台 | 能力 |
-|------|------|
-| 🪽 飞书 Wiki | 支持本地 Markdown 批量导入，并恢复多层目录结构 |
-| 🪶 语雀 | 支持本地 Markdown 创建或更新到语雀知识库，上传图片和附件 |
-| <img src="https://cdn.jsdelivr.net/gh/edent/SuperTinyIcons/images/svg/evernote.svg" alt="Evernote" width="16"> 印象笔记 | 支持本地 Markdown 批量导入，并上传本地图片和附件 |
-| 🤖 ima 知识库 | 支持本地文件上传到知识库根目录或已有文件夹 |
+---
 
-### 📚 教程
+## 🖼️ 界面预览
 
-| 平台 | 能力 |
-|------|------|
-| Notion | 展示官方 Markdown 导出迁移指南 |
+<table>
+  <tr>
+    <td width="50%" align="center">
+      <img src="docs/images/wandao-home.png" alt="万能导桌面端首页" width="100%"><br>
+      <sub>首页：选择平台、开始新任务或继续最近任务</sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="docs/images/wandao-platform-center.png" alt="万能导平台中心界面" width="100%"><br>
+      <sub>平台中心：浏览已接入平台并选择导入、导出或教程</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center">
+      <img src="docs/images/wandao-task-center.png" alt="万能导任务中心界面" width="100%"><br>
+      <sub>任务中心：查看历史进度、失败原因并继续任务</sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="docs/images/wandao-tutorials.png" alt="万能导教程公告界面" width="100%"><br>
+      <sub>教程公告：在应用内阅读最新公告和使用教程</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center">
+      <img src="docs/images/wandao-plugin-center.png" alt="万能导插件中心界面" width="100%"><br>
+      <sub>插件中心：搜索、安装和更新需要的平台插件</sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="docs/images/wandao-settings.png" alt="万能导设置界面" width="100%"><br>
+      <sub>设置：选择自动化浏览器、显示模式并检查版本</sub>
+    </td>
+  </tr>
+</table>
 
-## ✨ 主要特性
+## ✨ 为什么使用万能导
 
-- 🧭 统一桌面端：左侧按“首页 / 平台中心 / 任务中心 / 设置”等工作台入口组织功能。
-- ✅ 目录选择：先读取目录，再选择全部或部分内容。
-- 📊 进度反馈：读取目录、导入、导出都有进度条和实时日志。
-- 🧾 任务历史：导入导出会保留最近任务记录，可复制任务报告和失败项，也可继续/重试支持恢复的任务。
-- 🧩 全平台 Plugin v1：飞书、语雀、知识星球、阿里云 Thoughts、印象笔记、有道、为知、OneNote、ima、Notion 全部由插件提供；官方插件随桌面端离线可用，签名更新可独立安装、回滚和卸载。
-- 🧱 共享核心：浏览器、checkpoint、凭证、结构化日志和任务报告归入 `wandao_core`，插件不会再依赖另一平台的实现。
-- 🧯 错误报告：用户日志和详细日志分离，反馈问题时可一键复制脱敏后的详细报告。
-- 🔁 增量更新：已导出的文档可以跳过，只补缺失内容。
-- 🖼️ 图片和附件处理：尽量把正文图片、附件下载或上传到目标平台。
-- 🔎 浏览器自动查找：自动扫描 Chrome、Edge、Chromium，也支持手动指定。
-- ⏱️ 请求节奏控制：内置固定延迟和随机浮动，尽量接近正常手动浏览节奏。
-- ⏹️ 停止按钮：任务执行中可以随时停止，已完成文件会保留。
-- 🌙 夜间模式和更新检查：桌面端支持主题切换和新版本提示。
+| | 能力 | | 能力 |
+| --- | --- | --- | --- |
+| 🧭 | **目录结构**：读取真实目录树，按文件夹或文档选择 | 🖼️ | **资源本地化**：尽量保留正文图片和附件 |
+| 🔁 | **任务恢复**：支持停止、继续和失败重试 | 📊 | **过程可见**：提供实时进度、日志和任务报告 |
+| ⚡ | **增量处理**：跳过已完成内容，减少重复工作 | 🧩 | **插件中心**：平台能力可独立下载、更新和回滚 |
+| 🔐 | **本地优先**：凭证和任务数据保存在用户电脑 | 🌙 | **桌面体验**：支持主题切换、搜索和更新检查 |
+
+## 🚀 支持的平台
+
+平台按导出、导入和教程三类展示；更多平台能力可在应用内“插件中心”获取。
+
+### 导出
+
+| 平台 | 主要能力 |
+| --- | --- |
+| 🌟 **知识星球** | 项目、专栏、帖子与文章页，可选评论和附件 |
+| 🪶 **语雀** | 知识库、目录、Markdown、图片与附件 |
+| 🪽 **飞书 Wiki** | Wiki 目录、原生文档和 Markdown 文件 |
+| ☁️ **阿里云 Thoughts** | 工作区文档导出 |
+| 🐘 **印象笔记** | 按笔记本导出 Markdown、图片和附件 |
+| 📝 **有道云笔记** | 目录树、正文图片和附件 |
+| 📒 **为知笔记** | 网页版登录、目录与图片 |
+| 🗂️ **OneNote** | 保留笔记本、分区和页面层级，仅 Windows |
+| 🤖 **ima 知识库** | 按知识库、文件夹或文档选择 |
+| 📌 **钉钉文档** | 知识库目录读取与 Markdown 导出 |
+| 🟥 **WPS 文档** | 云文档读取与 Markdown 导出 |
+| 🌊 **息流** | 空间内容读取与 Markdown 导出 |
+| 💎 **Obsidian** | 本地 Vault 归档、资源复制与引用重写 |
+| ➕ **等更多平台** | 更多平台将通过插件中心持续接入 |
+
+### 导入
+
+| 平台 | 主要能力 |
+| --- | --- |
+| 🪽 **飞书 Wiki** | 批量导入 Markdown，并恢复多层目录结构 |
+| 🪶 **语雀** | 创建或更新知识库文档，上传图片和附件 |
+| 🐘 **印象笔记** | 批量导入 Markdown、图片和附件 |
+| 🤖 **ima 知识库** | 上传本地文档到知识库或已有文件夹 |
+| ➕ **等更多平台** | 更多导入能力将通过插件中心持续接入 |
+
+### 教程
+
+| 平台 | 主要能力 |
+| --- | --- |
+| ◼️ **Notion** | 使用官方 Markdown 导出与迁移能力 |
+| ➕ **等更多平台** | 暂不适合自动化的平台也可以先提供迁移教程 |
 
 ## ⚡ 快速开始
-如果你有基础计算机知识，推荐直接拉取源码进行启动，很方便，因为有时候我可能发行版打包更慢👌
-### 👤 普通用户
 
-1. 打开 [GitHub Releases](https://github.com/tllovesxs/wandao/releases)。
-2. 下载对应系统的发行版。
-3. 安装或解压后打开 `Wandao`。
-4. 在左侧进入“平台中心”，选择要使用的平台。
-5. 按界面提示填写链接、登录、读取目录、选择范围并执行任务。
+1. 打开 [GitHub Releases](https://github.com/tllovesxs/wandao/releases)，下载 Windows x64 或 macOS Apple Silicon（arm64，macOS 11+）安装包
+2. 启动 Wandao，在“平台中心”选择目标平台和导入/导出操作
+3. 按界面提示登录或填写链接，然后读取目录
+4. 勾选需要处理的文档并开始任务
+5. 在“任务中心”查看进度、报告，或继续支持恢复的任务
 
-> **macOS 用户注意**：当前 macOS `.zip` 包未进行 Apple 公证。请只从本项目 GitHub Release 下载；若解压并移动到“应用程序”后提示“已损坏，无法打开”，在终端执行：`xattr -cr /Applications/Wandao.app`，再重新打开。
+发行版已内置运行环境，普通用户不需要安装 Python、Node.js，也不需要从源码启动。
 
-发行版已内置 Python 运行时，普通用户不需要额外安装 Python。
+> **macOS Apple Silicon 首次打开：** 当前正式 Release 未做 Developer ID 签名和 Apple 公证。请只从本项目 GitHub Releases 下载并移入“应用程序”；Gatekeeper 阻止时，可在“系统设置 → 隐私与安全性”确认来源后选择仍要打开。不要通过清除隔离属性绕过系统校验。
 
-### 🧑‍💻 源码一键启动
+详细操作和平台注意事项请查看 [使用教程](docs/使用教程.md)。
 
-如果你想改代码、本地调试，或者当前系统暂时没有合适的发行版，可以直接用源码启动。
+<details>
+<summary><strong>🧑‍💻 源码启动与本地开发</strong></summary>
 
-一键启动脚本会自动完成三件事：
-
-1. 检查本机有没有 Node.js/npm。
-2. 如果没有，会下载一个本地便携 Node.js 到 `.dev-runtime`，不污染系统环境。
-3. 自动检测官方 npm 源和国内 npmmirror，选择更适合当前网络的方式安装依赖并启动。
+源码启动适合参与开发、调试插件或当前没有合适发行版的情况。1.4.x 桌面端基于 Tauri 2；源码开发需要 Python 3.10+、Node.js 22.12+、Rust 1.88.0 和对应系统的 Tauri 前置依赖。
 
 Windows：
 
@@ -146,13 +166,7 @@ cd wandao
 .\start-wandao.cmd
 ```
 
-也可以直接双击：
-
-```text
-start-wandao.cmd
-```
-
-macOS/Linux：
+macOS：
 
 ```bash
 git clone https://github.com/tllovesxs/wandao.git
@@ -161,136 +175,80 @@ chmod +x ./start-wandao.sh
 ./start-wandao.sh
 ```
 
-国内网络环境也可以把 clone 地址换成 Gitee：
+国内网络环境可将仓库地址替换为 `https://gitee.com/shi-xiansong/wandao.git`。
 
-```powershell
-git clone https://gitee.com/shi-xiansong/wandao.git
-cd wandao
-.\start-wandao.cmd
-```
+</details>
 
-> 如果只想安装依赖、不启动软件，可以运行 `.\start-wandao.cmd -InstallOnly` 或 `./start-wandao.sh --install-only`。
+---
 
-## 🧩 常用流程
+<details>
+<summary><strong>🛠️ 质量检查与打包</strong></summary>
 
-### 📤 导出知识库
-
-1. 进入“平台中心”，选择目标平台。
-2. 点击该平台的“导出”动作。
-3. 填写入口链接，或填写平台账号/API 配置。
-4. 第一次使用时点击“登录并保存凭证”或“保存 API 配置”。
-5. 点击“读取目录”。
-6. 勾选要导出的目录或文档。
-7. 点击“开始导出”。
-
-### 📥 导入 Markdown
-
-1. 进入“平台中心”，选择目标平台。
-2. 点击该平台的“导入”动作。
-3. 选择本地 Markdown 目录。
-4. 按目标平台要求填写链接、API 配置或账号信息。
-5. 先“扫描目录”或“生成计划”。
-6. 先做“单篇/单文件导入测试”。
-7. 确认效果后再批量导入。
-
-飞书导入、语雀导入、印象笔记导入、ima 导入的详细步骤见 [使用教程](docs/使用教程.md)。
-
-### 📚 查看平台教程
-
-如果平台本身已经支持导入导出，或者暂时不适合稳定自动化，可以在“平台中心”查看对应平台的 Markdown 教程。
-
-社区贡献者也可以先提交教程型插件，后续再逐步升级为自动化脚本。
-
-## 🧠 配合 AI 学习项目
-
-万能导适合和 AI 编程/阅读工具一起使用：
-
-1. 用万能导导出你有权限访问的教学文档。
-2. 把导出的 Markdown 目录放进源码项目中。
-3. 用 AI 打开整个项目目录。
-4. 把 [项目学习导师提示词](prompts/项目学习导师提示词.md) 发给 AI。
-5. 之后可以按章节、功能或技术点提问，让 AI 结合“教学文档 + 真实源码”讲解。
-
-## 🛠️ 系统要求
-
-| 依赖 | 要求 |
-|------|------|
-| <img src="https://cdn.jsdelivr.net/gh/edent/SuperTinyIcons/images/svg/python.svg" alt="Python" width="16"> Python | 发行版已内置；源码运行需要 Python 3.10+ |
-| 🟩 Node.js | 仅源码运行桌面端、参与开发或本地打包时需要 |
-| 🌐 浏览器 | Chrome、Edge 或 Chromium，浏览器类平台登录时使用 |
-| 🔐 权限 | 需要拥有目标内容的正常访问权限 |
-
-## 📦 打包说明
-
-提交代码或本地打包前，建议先运行统一质量检查：
+提交代码或打包前运行完整质量检查：
 
 ```powershell
 python scripts\quality_check.py
 ```
 
-如果只修改在线插件，可以先跑插件校验：
+涉及 `wandao_electron/src-tauri/` 时，还需使用 Rust 1.88.0 运行格式、测试和 Clippy 门禁；CI 使用同一固定版本。
 
-```powershell
-node scripts\validate_plugins.js
-node --test tests_js/plugin_manager.test.js
-```
-
-如果只维护旧 `providers/` 兼容目录或公告索引，可以先跑更轻量的配置校验：
-
-```powershell
-python scripts\validate_providers.py
-```
+Windows 本地未签名 smoke 打包：
 
 ```powershell
 cd wandao_electron
 npm ci
-npm run build:win
-```
-macOS 包建议使用 GitHub Actions 或 macOS 本机打包：
-
-```bash
-npm run build:mac:x64
-npm run build:mac:arm64
+npm run build:win:unsigned
 ```
 
-## ⚖️ 合规说明
+本地与手动工作流生成的 `UNSIGNED-SMOKE` 包只能用于 smoke，不得直接发布。正式 `v*` tag 工作流当前也生成未签名 Windows/macOS 安装包，但会额外执行版本一致性、真实安装/资源 smoke、校验和、SBOM 和 provenance 门禁。更完整的维护说明见 [发布与回滚手册](docs/发布与回滚手册.md)。
 
-本项目用于减少用户手动复制、整理、迁移文档的机械劳动。它不会破解登录、不绕过权限控制，也不提供未授权内容访问能力。
+</details>
 
-请确认：
+---
 
-- 你对目标内容拥有访问权限。
-- 你的使用方式符合平台服务条款和版权要求。
-- 不要将导出的内容用于未获授权的传播、售卖或公开发布。
-- 不要调低延迟进行高频请求或批量滥用。
+## 🔐 使用与安全
 
-更多说明见 [docs/合规说明.md](docs/合规说明.md)。
+万能导不会破解登录或绕过平台权限。请只处理你有权访问的内容，并遵守对应平台的服务条款和版权要求。不要将导出内容用于未获授权的传播、售卖或公开发布，也不要通过降低延迟进行高频请求。
 
-## 🤝 参与贡献
+登录凭证和任务数据保存在本机。请勿在 Issue、PR、截图或日志中公开 Cookie、账号密码、Token、API Key、App Secret 等敏感信息。
 
-欢迎提交 Issue 和 Pull Request。Bug 反馈、平台适配、导入导出效果优化、文档补充和界面体验改进都可以参与。
+更多说明见 [合规说明](docs/合规说明.md)、[安全策略](SECURITY.md) 和 [本地数据存储策略](docs/本地数据存储策略.md)。
 
-为了避免重复开发，新平台、大功能、复杂 Bug 请先搜索已有 Issue/PR，再提交 Issue 并认领。认领后建议 7 天内提交 Draft PR 或同步进展。
+## 🤝 参与共创
 
-提交前请阅读 [CONTRIBUTING.md](CONTRIBUTING.md) 和 [docs/共创流程.md](docs/共创流程.md)。请不要在 Issue、PR、截图或日志里提交 Cookie、账号密码、App Secret、Token、API Key 等敏感信息。
+欢迎参与新平台适配、导入导出质量优化、Bug 修复、界面改进和文档维护。不会开发也可以通过“新平台接入建议 / 共创认领”Issue 模板建议新平台。准备开发新平台或较大功能时，请先搜索已有 Issue/PR，再提交 Issue 认领；认领后 2 天内提交 Draft PR 或可验证进展，复杂任务需说明情况并至少每 2 天同步一次。
 
-## 🔗 友情链接
+| 入口 | 用途 |
+| --- | --- |
+| [贡献指南](CONTRIBUTING.md) | 提交代码前需要了解的基本规则 |
+| [共创流程](docs/共创流程.md) | 认领 Issue、准备验收材料和提交 PR |
+| [插件开发与发布](docs/在线插件开发与发布.md) | 新平台插件结构、校验与发布方式 |
+| [GitHub Issues](https://github.com/tllovesxs/wandao/issues) | 反馈 Bug、提出建议或认领功能 |
 
-- [LINUX DO](https://linux.do)
+## 🔗 项目与联系
 
-## License
+| 项目 | 地址 |
+| --- | --- |
+| GitHub | [tllovesxs/wandao](https://github.com/tllovesxs/wandao) |
+| Gitee | [shi-xiansong/wandao](https://gitee.com/shi-xiansong/wandao) |
+| 联系邮箱 | `tl200599@163.com` |
+| 作者微信 | `pressure_spring` |
+
+## 📈 Star History
+
+<a href="https://www.star-history.com/?repos=tllovesxs%2Fwandao&type=timeline&legend=top-left">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=tllovesxs/wandao&type=timeline&theme=dark&legend=top-left&sealed_token=FYov8ICwAHTQ9yd8BHf4G_wynvkxW-Cyn1u-3L0u8RY9cbp5rG9biTriQsVm3xPj7khQm5XFQc21HkiccNxo3OAQwnIzYbHAIgyVV8zrfDPEhtFZOAoj_g">
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=tllovesxs/wandao&type=timeline&legend=top-left&sealed_token=FYov8ICwAHTQ9yd8BHf4G_wynvkxW-Cyn1u-3L0u8RY9cbp5rG9biTriQsVm3xPj7khQm5XFQc21HkiccNxo3OAQwnIzYbHAIgyVV8zrfDPEhtFZOAoj_g">
+    <img alt="万能导 GitHub Star 历史趋势" src="https://api.star-history.com/chart?repos=tllovesxs/wandao&type=timeline&legend=top-left&sealed_token=FYov8ICwAHTQ9yd8BHf4G_wynvkxW-Cyn1u-3L0u8RY9cbp5rG9biTriQsVm3xPj7khQm5XFQc21HkiccNxo3OAQwnIzYbHAIgyVV8zrfDPEhtFZOAoj_g">
+  </picture>
+</a>
+
+## 📄 License
 
 本项目采用 [GNU Affero General Public License v3.0](LICENSE) 开源。
 
----
-## Star History
-
-<a href="https://www.star-history.com/?repos=tllovesxs%2Fwandao&type=timeline&legend=top-left">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=tllovesxs/wandao&type=timeline&theme=dark&legend=top-left&sealed_token=FYov8ICwAHTQ9yd8BHf4G_wynvkxW-Cyn1u-3L0u8RY9cbp5rG9biTriQsVm3xPj7khQm5XFQc21HkiccNxo3OAQwnIzYbHAIgyVV8zrfDPEhtFZOAoj_g" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=tllovesxs/wandao&type=timeline&legend=top-left&sealed_token=FYov8ICwAHTQ9yd8BHf4G_wynvkxW-Cyn1u-3L0u8RY9cbp5rG9biTriQsVm3xPj7khQm5XFQc21HkiccNxo3OAQwnIzYbHAIgyVV8zrfDPEhtFZOAoj_g" />
-   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=tllovesxs/wandao&type=timeline&legend=top-left&sealed_token=FYov8ICwAHTQ9yd8BHf4G_wynvkxW-Cyn1u-3L0u8RY9cbp5rG9biTriQsVm3xPj7khQm5XFQc21HkiccNxo3OAQwnIzYbHAIgyVV8zrfDPEhtFZOAoj_g" />
- </picture>
-</a>
-
-如果这个项目对你有帮助，欢迎在 GitHub 给一个 Star。
+<p align="center">
+  <strong>万能导：让知识没有壁垒。</strong><br>
+  如果这个项目对你有帮助，欢迎在 GitHub 点一个 Star ⭐
+</p>
